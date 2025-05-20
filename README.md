@@ -317,6 +317,37 @@ class AuthTests(APITestCase):
 | `professor_attendance.png` | Attendance registration screen used by a professor for a scheduled class. |
 | `secretary_subjects.png` | Subject and department management interface used by a faculty secretary. |
 
+## 📸 Screenshots
+
+### 🧑‍💼 Admin Dashboard
+![Admin Dashboard](./screenshots/admin_dashboard.png)
+
+All admin management buttons: students, professors, librarians, finance staff, secretaries.
+
+### 🎓 Student Grades View
+![Student Grades](./screenshots/student_grades.png)
+
+List of grades visible to a student after logging into their dashboard.
+
+### 📘 Book Loan Panel
+![Book Loan](./screenshots/book_loan_panel.png)
+
+Librarian panel for issuing books to students.
+
+### 💰 Finance – Scholarship Management
+![Finance Scholarships](./screenshots/finance_scholarships.png)
+
+Finance officer’s view for managing and approving scholarship applications.
+
+### 🧑‍🏫 Professor Attendance Screen
+![Professor Attendance](./screenshots/professor_attendance.png)
+
+Attendance registration screen used by a professor for a scheduled class.
+
+### 🏢 Secretary – Subject Management
+![Secretary Subjects](./screenshots/secretary_subjects.png)
+
+Subject and department management interface used by a faculty secretary.
 
 ---
 
