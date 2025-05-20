@@ -307,18 +307,6 @@ class AuthTests(APITestCase):
 
 ## 📸 Screenshots
 
-
-| Screenshot               | Content that should be visible                                 |
-|--------------------------|-----------------------------------------------------------------|
-| `admin_dashboard.png`    | All admin management buttons: students, professors, librarians, finance staff, secretaries. |
-| `student_grades.png`     | List of grades visible to a student after logging into their dashboard. |
-| `book_loan_panel.png`    | Librarian panel for issuing books to students.                 |
-| `finance_scholarships.png` | Finance officer’s view for managing and approving scholarship applications. |
-| `professor_attendance.png` | Attendance registration screen used by a professor for a scheduled class. |
-| `secretary_subjects.png` | Subject and department management interface used by a faculty secretary. |
-
-## 📸 Screenshots
-
 ### 🧑‍💼 Admin Dashboard
 ![Admin Dashboard](./screenshots/admin_dashboard.png)
 
