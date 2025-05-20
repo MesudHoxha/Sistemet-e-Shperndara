@@ -1,1 +1,0 @@
-# Sistemet-e-Shperndara
