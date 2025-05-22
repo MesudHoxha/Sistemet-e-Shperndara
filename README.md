@@ -363,6 +363,9 @@ Key tasks and development stages were organized and monitored throughout the pro
 
 🔗 [View Project Board on Monday.com](https://view.monday.com/1967370212-a10064b5a34c7430ff83369944f85d47?r=euc1)
 
+
+📁 Code Repository: [Sistemet-e-Shperndara on GitHub](https://github.com/MesudHoxha/Sistemet-e-Shperndara.git)
+
 ---
 
 > This system is developed as a complete academic prototype for educational purposes under the course "Sistemet e Shpërndara 2025" at FIEK – University of Prishtina.
