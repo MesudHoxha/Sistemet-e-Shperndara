@@ -147,6 +147,12 @@ class StudentViewSet(TenantFilterMixin, viewsets.ModelViewSet):
             return [RolePermission(['admin', 'professor', 'secretary', 'student', 'finance', 'exam', 'librarian'])]
         return [RolePermission(['admin', 'professor', 'secretary', 'finance', 'exam', 'librarian'])]
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_authenticated and hasattr(user, 'userprofile') and user.userprofile.role == 'student':
+            return Student.objects.filter(user=user)
+        return Student.objects.all()
+
     @action(detail=True, methods=['get'], url_path='average-grade')
     def average_grade(self, request, pk=None):
         try:
@@ -177,6 +183,12 @@ class ProfessorViewSet(TenantFilterMixin, viewsets.ModelViewSet):
         if self.request.method in ['GET']:
             return [RolePermission(['admin', 'secretary', 'finance', 'exam', 'professor'])]
         return [RolePermission(['admin', 'secretary', 'finance', 'exam'])]
+ 
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_authenticated and hasattr(user, 'userprofile') and user.userprofile.role == 'professor':
+            return Professor.objects.filter(user=user)
+        return Professor.objects.all()
 
 
 
@@ -366,6 +378,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             student = Student.objects.get(user=user)
             return Attendance.objects.filter(student=student)
         return Attendance.objects.all()
+    
 
 
 # 🔸 Regjistrimet e studentëve në lëndë
