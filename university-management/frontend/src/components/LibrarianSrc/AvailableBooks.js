@@ -59,8 +59,10 @@ const AvailableBooks = () => {
       }
   
       const updatePayload = {
-        available_copies: newCopies
-      };
+  available_copies: newCopies,
+  total_copies: newCopies
+};
+
   
       // nëse kopjet janë rritur dhe total_copies duhet përditësuar
       if (newCopies > book.total_copies) {
