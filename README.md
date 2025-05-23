@@ -255,14 +255,13 @@ Each role logs into a separate dashboard where they can manage only what is allo
 
 ### ✅ Multi-Tenancy (TenantFilterMixin)
 
-Data is filtered based on the user's faculty. Secretaries, Professors, Students, etc., see only their own institution's data.
+Data is filtered based on the user's faculty. Secretaries, Professors and Students see only their own institution's data.
 
 This is achieved using a shared `TenantFilterMixin` that automatically filters queries based on the user's role and linked faculty:
 
 ```python
 def get_queryset(self):
-    return self.get_tenant_queryset(Student.objects.all())
-```
+    return self.get_tenant_queryset(Student.objects.all(
 
 ### 🚀 Caching
 
