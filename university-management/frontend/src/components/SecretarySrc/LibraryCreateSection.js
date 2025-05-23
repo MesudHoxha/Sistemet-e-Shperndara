@@ -134,27 +134,7 @@ const LibraryCreateSection = () => {
 
       {message && <p style={styles.message}>{message}</p>}
 
-      <h4 style={{ marginTop: '40px' }}>📚 Bibliotekat ekzistuese</h4>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th style={styles.th}>Emri</th>
-            <th style={styles.th}>Ndërtesa</th>
-            <th style={styles.th}>Veprime</th>
-          </tr>
-        </thead>
-        <tbody>
-          {libraries.map(lib => (
-            <tr key={lib.id}>
-              <td style={styles.td}>{lib.name}</td>
-              <td style={styles.td}>{lib.building_name}</td>
-              <td style={styles.td}>
-                <button onClick={() => handleEditClick(lib)}>✏️ Edito</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+
 
       <button onClick={() => navigate('/secretary')} style={{ ...styles.button, ...styles.backButton }}>
         🔙 Kthehu mbrapa
