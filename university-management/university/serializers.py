@@ -548,7 +548,8 @@ class ScholarshipApplicationSerializer(serializers.ModelSerializer):
     student_id = serializers.SerializerMethodField()
     awarded = serializers.SerializerMethodField()
     amount = serializers.SerializerMethodField()
-
+    student = serializers.PrimaryKeyRelatedField(read_only=True)
+    
     class Meta:
         model = ScholarshipApplication
         fields = [
