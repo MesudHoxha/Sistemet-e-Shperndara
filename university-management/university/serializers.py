@@ -1,69 +1,640 @@
+from rest_framework import serializers
 from django.contrib.auth.models import User
-from rest_framework import viewsets, generics, serializers, status
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework.decorators import action
-from .permissions import RolePermission
-from rest_framework import status
-from django.contrib.auth import get_user_model
-from django.shortcuts import get_object_or_404
-from django.db.models import Avg
-from django.views.decorators.cache import cache_page
-from django.utils.decorators import method_decorator
-from django.contrib.auth import update_session_auth_hash
-from .mixins import TenantFilterMixin
-
-import re
+from .models import Student, UserProfile
+from pprint import pprint
+from django.utils.text import slugify
 from .models import *
-from .serializers import *
 
+# ======================== USER SERIALIZER ========================
 
-# ===================================
-# 🔐 AUTENTIKIM & REGJISTRIM
-# ===================================
-
-# 🔸 JWT Login me Email (pa përdorur username)
-class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(write_only=True, required=True)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields.pop('username', None)  # largojmë fushën e username
-
-    def validate(self, attrs):
-        email = attrs.get("email")
-        password = attrs.get("password")
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise AuthenticationFailed("Email ose fjalëkalim i pasaktë!")
-        attrs['username'] = user.username  # vendosim username për validim të mëtejshëm
-        return super().validate(attrs)
-
-    @classmethod
-    def get_token(cls, user):
-        token = super().get_token(user)
-        # shtojmë të dhëna shtesë në token
-        token['role'] = user.userprofile.role
-        token['email'] = user.email
-        return token
-
+# Serializer për modelin bazë të përdoruesit Django
+class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['email', 'password']
+        fields = ['id', 'username', 'email']
 
 
-# View që përdor serializer-in më sipër për login me email
-class EmailTokenObtainPairView(TokenObtainPairView):
-    serializer_class = EmailTokenObtainPairSerializer
+# ======================== STUDENT ================================
+
+# Gjeneron email unik për studentë në formatin emri.mbiemri@student.uni.com
+def generate_unique_student_email(first_name, last_name):
+    base_username = f"{slugify(first_name)}.{slugify(last_name)}"
+    domain = "@student.uni.com"
+    email = base_username + domain
+    counter = 1
+    while Student.objects.filter(email=email).exists() or User.objects.filter(email=email).exists():
+        email = f"{base_username}{counter}{domain}"
+        counter += 1
+    return email.lower()
+
+# Serializer për studentët
+class StudentSerializer(serializers.ModelSerializer):
+    faculty_name = serializers.SerializerMethodField()
+    department_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Student
+        fields = [
+            'id', 'first_name', 'last_name',
+            'faculty', 'department', 'faculty_name', 'department_name',
+            'registration_date', 'email'
+        ]
+        read_only_fields = ['email']
+        extra_kwargs = {
+            'user': {'required': False}
+        }
+
+    def get_faculty_name(self, obj):
+        return obj.faculty.name if obj.faculty else None
+
+    def get_department_name(self, obj):
+        return obj.department.name if obj.department else None
+
+    def create(self, validated_data):
+        try:
+            # Marrim të dhënat dhe gjenerojmë email unik + user
+            first_name = validated_data.pop('first_name', '').capitalize()
+            last_name = validated_data.pop('last_name', '').capitalize()
+            email = generate_unique_student_email(first_name, last_name)
+            password = "Student123"
+
+            user = User.objects.create_user(
+                username=email.split('@')[0],
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            UserProfile.objects.create(user=user, role='student') 
+
+            faculty = validated_data.pop('faculty', None)
+            department = validated_data.pop('department', None)
+
+            if isinstance(faculty, int):
+                faculty = Faculty.objects.filter(id=faculty).first()
+            if not faculty:
+                raise serializers.ValidationError("Fusha 'faculty' mungon ose është e pavlefshme.")
+
+            if isinstance(department, int):
+                department = Department.objects.filter(id=department).first()
+            if not department:
+                raise serializers.ValidationError("Fusha 'department' mungon ose është e pavlefshme.")
+
+            student = Student.objects.create(
+                user=user,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                faculty=faculty,
+                department=department
+            )
+
+            return student
+
+        except Exception as e:
+            print("❌ GABIM gjatë krijimit të studentit:", str(e))
+            raise serializers.ValidationError(str(e))
 
 
-# 🔸 Serializer për regjistrimin e përdoruesve të rinj
+# ======================== PROFESSOR ==============================
+
+def generate_unique_professor_email(first_name, last_name):
+    base_username = f"{slugify(first_name)}.{slugify(last_name)}"
+    domain = "@prof.uni.com"
+    email = base_username + domain
+    counter = 1
+    while Professor.objects.filter(email=email).exists() or User.objects.filter(email=email).exists():
+        email = f"{base_username}{counter}{domain}"
+        counter += 1
+    return email.lower()
+
+class ProfessorSerializer(serializers.ModelSerializer):
+    faculty_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Professor
+        fields = [
+            'id', 'first_name', 'last_name', 'email',
+            'faculty', 'hire_date',
+            'faculty_name'
+        ]
+        read_only_fields = ['email', 'hire_date']
+
+    def get_faculty_name(self, obj):
+        return obj.faculty.name if obj.faculty else None
+
+
+    def create(self, validated_data):
+        try:
+            first_name = validated_data.pop('first_name', '').capitalize()
+            last_name = validated_data.pop('last_name', '').capitalize()
+            email = generate_unique_professor_email(first_name, last_name)
+            password = "Prof123"
+
+            user = User.objects.create_user(
+                username=email.split('@')[0],
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            UserProfile.objects.create(user=user, role='professor')
+
+            faculty = validated_data.pop('faculty')
+
+            professor = Professor.objects.create(
+                user=user,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                faculty=faculty,
+            )
+
+            return professor
+
+        except Exception as e:
+            print("❌ GABIM në krijimin e profesorit:", str(e))
+            raise serializers.ValidationError(str(e))
+
+
+# ======================== SECRETARY ==============================
+
+def generate_unique_secretary_email(first_name, last_name):
+    base_username = f"{slugify(first_name)}.{slugify(last_name)}"
+    domain = "@secretary.uni.com"
+    email = base_username + domain
+    counter = 1
+    while Secretary.objects.filter(email=email).exists() or User.objects.filter(email=email).exists():
+        email = f"{base_username}{counter}{domain}"
+        counter += 1
+    return email.lower()
+
+class SecretarySerializer(serializers.ModelSerializer):
+    faculty = serializers.PrimaryKeyRelatedField(queryset=Faculty.objects.all())
+
+    class Meta:
+        model = Secretary
+        fields = ['id', 'first_name', 'last_name', 'email', 'hire_date', 'faculty']
+        read_only_fields = ['email', 'hire_date']
+
+    def create(self, validated_data):
+        try:
+            first_name = validated_data.pop('first_name', '').capitalize()
+            last_name = validated_data.pop('last_name', '').capitalize()
+            email = generate_unique_secretary_email(first_name, last_name)
+            password = "Sekret123"
+
+            user = User.objects.create_user(
+                username=email.split('@')[0],
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+            )
+
+            UserProfile.objects.create(user=user, role='secretary')
+
+            secretary = Secretary.objects.create(
+                user=user,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                faculty=validated_data.get('faculty'),
+            )
+
+            return secretary
+
+        except Exception as e:
+            print("❌ GABIM në krijimin e sekretarit:", str(e))
+            raise serializers.ValidationError(str(e))
+
+
+# ======================== FINANCE ================================
+
+def generate_unique_finance_email(first_name, last_name):
+    base_username = f"{slugify(first_name)}.{slugify(last_name)}"
+    domain = "@finance.uni.com"
+    email = base_username + domain
+    counter = 1
+    while Finance.objects.filter(email=email).exists() or User.objects.filter(email=email).exists():
+        email = f"{base_username}{counter}{domain}"
+        counter += 1
+    return email.lower()
+
+class FinanceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Finance
+        fields = ['id', 'first_name', 'last_name', 'email', 'hire_date']
+        read_only_fields = ['email', 'hire_date']
+
+    def create(self, validated_data):
+        try:
+            first_name = validated_data.pop('first_name', '').capitalize()
+            last_name = validated_data.pop('last_name', '').capitalize()
+            email = generate_unique_finance_email(first_name, last_name)
+            password = "Finance123"
+
+            user = User.objects.create_user(
+                username=email.split('@')[0],
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+            )
+
+            UserProfile.objects.create(user=user, role='finance')
+
+            finance = Finance.objects.create(
+                user=user,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+            )
+
+            return finance
+
+        except Exception as e:
+            print("❌ GABIM në krijimin e financës:", str(e))
+            raise serializers.ValidationError(str(e))
+
+
+# ======================== LIBRARIAN ==============================
+
+def generate_unique_librarian_email(first_name, last_name):
+    base_username = f"{slugify(first_name)}.{slugify(last_name)}"
+    domain = "@library.uni.com"
+    email = base_username + domain
+    counter = 1
+    while Librarian.objects.filter(email=email).exists() or User.objects.filter(email=email).exists():
+        email = f"{base_username}{counter}{domain}"
+        counter += 1
+    return email.lower()
+
+class LibrarianSerializer(serializers.ModelSerializer):
+    library = serializers.PrimaryKeyRelatedField(queryset=Library.objects.all())
+
+    class Meta:
+        model = Librarian
+        fields = ['id', 'first_name', 'last_name', 'email', 'hire_date', 'library']
+        read_only_fields = ['email', 'hire_date']
+
+    def create(self, validated_data):
+        try:
+            first_name = validated_data.pop('first_name', '').capitalize()
+            last_name = validated_data.pop('last_name', '').capitalize()
+            email = generate_unique_librarian_email(first_name, last_name)
+            password = "Library123"
+
+            user = User.objects.create_user(
+                username=email.split('@')[0],
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            UserProfile.objects.create(user=user, role='librarian')
+
+            librarian = Librarian.objects.create(
+                user=user,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                library=validated_data.get('library'),
+            )
+
+            return librarian
+
+        except Exception as e:
+            print("❌ GABIM në krijimin e librarian-it:", str(e))
+            raise serializers.ValidationError(str(e))
+
+
+# ======================== EXAM OFFICER ===========================
+
+def generate_unique_exam_email(first_name, last_name):
+    base_username = f"{slugify(first_name)}.{slugify(last_name)}"
+    domain = "@exam.uni.com"
+    email = base_username + domain
+    counter = 1
+    while ExamOfficer.objects.filter(email=email).exists() or User.objects.filter(email=email).exists():
+        email = f"{base_username}{counter}{domain}"
+        counter += 1
+    return email.lower()
+
+class ExamOfficerSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = ExamOfficer
+        fields = ['id', 'first_name', 'last_name', 'email', 'hire_date']
+        read_only_fields = ['email', 'hire_date']
+
+    def create(self, validated_data):
+        try:
+            first_name = validated_data.pop('first_name', '').capitalize()
+            last_name = validated_data.pop('last_name', '').capitalize()
+            email = generate_unique_exam_email(first_name, last_name)
+            password = "Exam123"
+
+            user = User.objects.create_user(
+                username=email.split('@')[0],
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            UserProfile.objects.create(user=user, role='exam')
+
+            exam = ExamOfficer.objects.create(
+                user=user,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+            )
+
+            return exam
+
+        except Exception as e:
+            print("❌ GABIM në krijimin e Exam Officer-it:", str(e))
+            raise serializers.ValidationError(str(e))
+
+# ======================== SUBJECTS (LËNDËT) ========================
+
+class SubjectSerializer(serializers.ModelSerializer):
+    professor_name = serializers.SerializerMethodField()
+    department_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Subject
+        fields = [
+            'id', 'name', 'description', 'credits',
+            'professor', 'professor_name',
+            'department', 'department_name',
+        ]
+
+    def get_professor_name(self, obj):
+        return f"{obj.professor.first_name} {obj.professor.last_name}" if obj.professor else None
+
+    def get_department_name(self, obj):
+        return obj.department.name if obj.department else None
+
+
+# ======================== EXAMS (PROVIMET) =========================
+
+class ExamSerializer(serializers.ModelSerializer):
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    professor_name = serializers.SerializerMethodField()
+    professor = serializers.PrimaryKeyRelatedField(queryset=Professor.objects.all())
+
+    class Meta:
+        model = Exam
+        fields = ['id', 'subject', 'subject_name', 'professor', 'professor_name', 'exam_date', 'exam_time', 'room']
+
+    def get_professor_name(self, obj):
+        return f"{obj.professor.first_name} {obj.professor.last_name}" if obj.professor else None
+
+
+# ======================== EXAM SUBMISSION =========================
+
+class ExamSubmissionSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+
+    class Meta:
+        model = ExamSubmission
+        fields = ['id', 'student', 'student_name', 'subject', 'subject_name', 'submitted_at']
+        read_only_fields = ['student']
+
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}"
+
+
+# ======================== GRADES (NOTAT) ==========================
+
+# serializers.py
+class GradeSerializer(serializers.ModelSerializer):
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    exam_subject_name = serializers.CharField(source='exam.subject.name', read_only=True)
+    exam_date = serializers.DateField(source='exam.exam_date', read_only=True)
+    student_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Grade
+        fields = [
+            'id', 'student', 'student_name', 'subject', 'exam', 'score',
+            'subject_name', 'exam_subject_name', 'exam_date'
+        ]
+
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}"
+
+    def validate(self, data):
+        student = data.get('student')
+        exam = data.get('exam')
+
+        if Grade.objects.filter(student=student, exam=exam).exists():
+            raise serializers.ValidationError(
+                "❌ Ky student ka tashmë një notë për këtë provim."
+            )
+
+# ======================== SCHEDULE (ORARI) ========================
+
+class ScheduleSerializer(serializers.ModelSerializer):
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+
+    class Meta:
+        model = Schedule
+        fields = ['id', 'subject', 'subject_name', 'day_of_week', 'start_time', 'end_time', 'start_date', 'end_date']
+
+
+
+# ======================== ATTENDANCE (PIESEMARRJA) ================
+
+class AttendanceSerializer(serializers.ModelSerializer):
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    student_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Attendance
+        fields = ['id', 'student', 'student_name', 'subject', 'date', 'status', 'subject_name']
+
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}"
+
+
+
+
+
+
+# ======================== LIBRARY & BOOKS =========================
+
+class LibrarySerializer(serializers.ModelSerializer):
+    faculty = serializers.PrimaryKeyRelatedField(queryset=Faculty.objects.all())
+
+    class Meta:
+        model = Library
+        fields = '__all__'
+
+class BookSerializer(serializers.ModelSerializer):
+    borrowed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Book
+        fields = '__all__'
+
+    def get_borrowed_by_name(self, obj):
+        if obj.borrowed_by:
+            return f"{obj.borrowed_by.first_name} {obj.borrowed_by.last_name}"
+        return None
+
+class BookLoanSerializer(serializers.ModelSerializer):
+    book_title = serializers.CharField(source='book.title', read_only=True)
+    book_author = serializers.CharField(source='book.author', read_only=True)
+    student_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BookLoan
+        fields = [
+            'id', 'book', 'book_title', 'book_author',
+            'student', 'student_name', 'borrowed_at', 'returned'
+        ]
+
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}"
+
+
+# ======================== BUILDINGS & ROOMS =======================
+
+class BuildingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Building
+        fields = ['id', 'name', 'address', 'faculty']
+        read_only_fields = ['faculty']
+
+class RoomSerializer(serializers.ModelSerializer):
+    building_name = serializers.CharField(source='building.name', read_only=True)
+    faculty_name = serializers.CharField(source='faculty.name', read_only=True)
+    faculty = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = Room
+        fields = [
+            'id',
+            'room_number',
+            'building', 'building_name',
+            'faculty', 'faculty_name',
+        ]
+
+
+
+
+# ======================== PAYMENTS ================================
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = '__all__'
+
+
+# ======================== SCHOLARSHIPS ============================
+
+class ScholarshipSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Scholarship
+        fields = ['id', 'student', 'student_name', 'scholarship_type', 'amount', 'awarded_date']
+        read_only_fields = ['student_name']
+
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}"
+
+class ScholarshipApplicationSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+    student_id = serializers.SerializerMethodField()
+    awarded = serializers.SerializerMethodField()
+    amount = serializers.SerializerMethodField()
+    student = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = ScholarshipApplication
+        fields = [
+            'id', 'student', 'student_name', 'student_id',
+            'month', 'applied_date', 'is_approved',
+            'awarded', 'amount'
+        ]
+
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}"
+
+    def get_student_id(self, obj):
+        student_obj = Student.objects.filter(user=obj.student).first()
+        return student_obj.id if student_obj else None
+
+    def get_awarded(self, obj):
+        return Scholarship.objects.filter(student=obj.student, scholarship_type=obj.month).exists()
+
+    def get_amount(self, obj):
+        scholarship = Scholarship.objects.filter(student=obj.student, scholarship_type=obj.month).first()
+        return scholarship.amount if scholarship else None
+
+
+
+
+class ScholarshipOpeningSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScholarshipOpening
+        fields = ['id', 'month', 'amount']
+
+
+# ======================== PAYMENTS FOR STAFF ======================
+
+class PaymentStaffSerializer(serializers.ModelSerializer):
+    payment_date = serializers.DateTimeField(source='created_at', format="%d/%m/%Y %H:%M", read_only=True)
+    user = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), required=False, allow_null=True
+    )
+
+    class Meta:
+        model = PaymentStaff
+        fields = ['id', 'user', 'full_name', 'role', 'amount', 'month', 'payment_date']
+        read_only_fields = ['payment_date']
+
+    def validate(self, attrs):
+        if not attrs.get('user') and (not attrs.get('full_name') or not attrs.get('role')):
+            raise serializers.ValidationError("Nëse nuk dërgon 'user', dërgo 'full_name' dhe 'role'.")
+        return attrs
+
+
+# ======================== FACULTY & DEPARTMENTS ===================
+
+class FacultySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Faculty
+        fields = '__all__'
+
+class DepartmentSerializer(serializers.ModelSerializer):
+    faculty_name = serializers.CharField(source='faculty.name', read_only=True)
+
+    class Meta:
+        model = Department
+        fields = ['id', 'name', 'faculty', 'faculty_name']
+
+
+# ======================== ENROLLMENTS =============================
+
+class EnrollmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Enrollment
+        fields = '__all__'
+        read_only_fields = ['student']
+
+
+# ======================== REGISTER USER ===========================
+
 class RegisterSerializer(serializers.ModelSerializer):
     role = serializers.ChoiceField(choices=UserProfile.ROLE_CHOICES)
 
@@ -77,626 +648,3 @@ class RegisterSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(**validated_data)
         UserProfile.objects.create(user=user, role=role)
         return user
-
-
-# View për regjistrimin e përdoruesve të rinj (qasje publike)
-class RegisterView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    permission_classes = [AllowAny]
-    serializer_class = RegisterSerializer
-
-
-# 🔸 Kthen profilin e përdoruesit të autentikuar
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def user_profile(request):
-    user = request.user
-    return Response({
-        'username': request.user.username,
-        'email': request.user.email,
-        'role': request.user.userprofile.role,
-        'first_name': user.first_name,
-        'last_name': user.last_name
-    })
-
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def change_password(request):
-    user = request.user
-    old_password = request.data.get('old_password')
-    new_password = request.data.get('new_password')
-    confirm_password = request.data.get('confirm_password')
-
-    if not user.check_password(old_password):
-        return Response({'detail': 'Fjalëkalimi i vjetër nuk është i saktë.'}, status=400)
-
-    if new_password != confirm_password:
-        return Response({'detail': 'Fjalëkalimi i ri nuk përputhet me konfirmimin.'}, status=400)
-
-    # Regex për kontrollin e fjalëkalimit
-    pattern = r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$'
-    if not re.match(pattern, new_password):
-        return Response({
-            'detail': 'Fjalëkalimi i ri duhet të ketë së paku 8 karaktere, një shkronjë të madhe, një të vogël, një numër dhe një simbol special.'
-        }, status=400)
-
-    user.set_password(new_password)
-    user.save()
-    update_session_auth_hash(request, user)
-    return Response({'detail': 'Fjalëkalimi u ndryshua me sukses.'})
-
-
-
-# ===================================
-# 🧑‍🎓 ROLET KRYESORE NË SISTEM
-# ===================================
-# 🔸 Menaxhimi i studentëve
-class StudentViewSet(TenantFilterMixin, viewsets.ModelViewSet):
-    queryset = Student.objects.all()
-    serializer_class = StudentSerializer
-
-    def get_queryset(self):
-        return self.get_tenant_queryset(Student.objects.all())
-
-    def get_permissions(self):
-        if self.request.method in ['DELETE']:
-            return [RolePermission(['admin'])]
-        if self.request.method == 'GET':
-            return [RolePermission(['admin', 'professor', 'secretary', 'student', 'finance', 'exam', 'librarian'])]
-        return [RolePermission(['admin', 'professor', 'secretary', 'finance', 'exam', 'librarian'])]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_authenticated and hasattr(user, 'userprofile') and user.userprofile.role == 'student':
-            return Student.objects.filter(user=user)
-        return Student.objects.all()
-
-    @action(detail=True, methods=['get'], url_path='average-grade')
-    def average_grade(self, request, pk=None):
-        try:
-            role = request.user.userprofile.role
-        except UserProfile.DoesNotExist:
-            return Response({"detail": "Profili i përdoruesit nuk ekziston."}, status=403)
-
-        if role not in ['admin', 'finance', 'secretary', 'professor']:
-            return Response({"detail": "Nuk keni leje për këtë veprim."}, status=403)
-
-        student = self.get_object()
-        avg = Grade.objects.filter(student=student).aggregate(average=Avg('score'))['average']
-        return Response({"average_grade": round(avg, 2) if avg else 0.0})
-
-
-
-
-
-# 🔸 Menaxhimi i profesorëve
-class ProfessorViewSet(TenantFilterMixin, viewsets.ModelViewSet):
-    queryset = Professor.objects.all()
-    serializer_class = ProfessorSerializer
-
-    def get_queryset(self):
-        return self.get_tenant_queryset(Professor.objects.all())
-
-    def get_permissions(self):
-        if self.request.method in ['GET']:
-            return [RolePermission(['admin', 'secretary', 'finance', 'exam', 'professor'])]
-        return [RolePermission(['admin', 'secretary', 'finance', 'exam'])]
- 
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_authenticated and hasattr(user, 'userprofile') and user.userprofile.role == 'professor':
-            return Professor.objects.filter(user=user)
-        return Professor.objects.all()
-
-
-
-# 🔸 Menaxhimi i sekretarëve (kufizohet në vetë-sekretarin nëse nuk është admin)
-class SecretaryViewSet(viewsets.ModelViewSet):
-    queryset = Secretary.objects.all()
-    serializer_class = SecretarySerializer
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_authenticated and hasattr(user, 'userprofile') and user.userprofile.role == 'secretary':
-            return Secretary.objects.filter(user=user)
-        return Secretary.objects.all()
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['admin'])]
-        return [RolePermission(['admin', 'secretary', 'finance'])]
-
-    @action(detail=False, methods=['get'])
-    def me(self, request):
-        user = request.user
-        try:
-            secretary = Secretary.objects.get(user=user)
-            serializer = self.get_serializer(secretary)
-            return Response(serializer.data)
-        except Secretary.DoesNotExist:
-            return Response({'detail': 'Sekretari nuk u gjet.'}, status=404)
-
-
-
-# 🔸 Menaxhimi i stafit të financës
-class FinanceViewSet(viewsets.ModelViewSet):
-    queryset = Finance.objects.all()
-    serializer_class = FinanceSerializer
-
-    def get_permissions(self):
-        return [RolePermission(['finance', 'admin'])]
-
-
-# 🔸 Menaxhimi i bibliotekarëve
-class LibrarianViewSet(viewsets.ModelViewSet):
-    queryset = Librarian.objects.all()
-    serializer_class = LibrarianSerializer
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_authenticated and hasattr(user, 'userprofile'):
-            if user.userprofile.role == 'librarian':
-                return Librarian.objects.filter(user=user)
-        return Librarian.objects.all()
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['admin'])]
-        return [RolePermission(['admin', 'librarian', 'finance'])]
-
-
-
-# 🔸 Menaxhimi i oficerëve të provimeve
-class ExamOfficerViewSet(viewsets.ModelViewSet):
-    queryset = ExamOfficer.objects.all()
-    serializer_class = ExamOfficerSerializer
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['admin'])]
-        return [RolePermission(['admin', 'finance'])]
-
-
-# ===================================
-# 📘 FUNKSIONALITETE AKADEMIKE
-# ===================================
-
-# 🔸 Menaxhimi i lëndëve
-
-class SubjectViewSet(viewsets.ModelViewSet):
-    serializer_class = SubjectSerializer
-    filterset_fields = ['department']
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.userprofile.role == 'secretary':
-            try:
-                secretary = Secretary.objects.get(user=user)
-                return Subject.objects.filter(department__faculty=secretary.faculty)
-            except Secretary.DoesNotExist:
-                return Subject.objects.none()
-        elif user.userprofile.role == 'professor':
-            professor = Professor.objects.get(user=user)
-            return Subject.objects.filter(professor=professor)
-        elif user.userprofile.role == 'student':
-            student = Student.objects.get(user=user)
-            return Subject.objects.filter(department=student.department)
-        return Subject.objects.all()
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['secretary'])]
-        return [RolePermission(['student', 'secretary', 'professor', 'exam'])]
-
-
-# 🔸 Menaxhimi i notave
-@method_decorator(cache_page(60 * 15), name='list')
-class GradeViewSet(viewsets.ModelViewSet):
-    queryset = Grade.objects.all()
-    serializer_class = GradeSerializer
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT']:
-            return [RolePermission(['professor'])]
-        return [RolePermission(['professor', 'student'])]
-
-    def perform_create(self, serializer):
-        exam = serializer.validated_data['exam']
-        subject = serializer.validated_data['subject']
-        if subject != exam.subject:
-            raise serializers.ValidationError("Subject duhet të përputhet me atë të exam-it.")
-        serializer.save()
-
-
-# 🔸 Vetëm notat e studentit të kyçur
-@method_decorator(cache_page(60 * 15), name='list')
-class MyGradesViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = GradeSerializer
-
-    def get_permissions(self):
-        return [RolePermission(['student'])]
-
-    def get_queryset(self):
-        return Grade.objects.filter(student__user=self.request.user)
-
-
-# 🔸 Menaxhimi i provimeve
-class ExamViewSet(viewsets.ModelViewSet):
-    queryset = Exam.objects.all()
-    serializer_class = ExamSerializer
-
-    def get_queryset(self):
-        user = self.request.user
-        if hasattr(user, 'userprofile') and user.userprofile.role == 'exam_officer':
-            try:
-                officer = ExamOfficer.objects.get(user=user)
-                return Exam.objects.filter(subject__department__faculty=officer.faculty)
-            except ExamOfficer.DoesNotExist:
-                return Exam.objects.none()
-        return Exam.objects.all()
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['exam'])]
-        return [RolePermission(['exam','student', 'professor'])]
-
-
-
-# 🔸 Menaxhimi i orarit
-class ScheduleViewSet(viewsets.ModelViewSet):
-    queryset = Schedule.objects.all()
-    serializer_class = ScheduleSerializer
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['professor'])]
-        return [RolePermission(['student', 'professor'])]
-
-
-
-
-# 🔸 Menaxhimi i pjesëmarrjes në ligjërata
-class AttendanceViewSet(viewsets.ModelViewSet):
-    queryset = Attendance.objects.all()
-    serializer_class = AttendanceSerializer
-    
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT']:
-            return [RolePermission(['professor'])]
-        return [RolePermission(['professor', 'student'])]
-
-    def get_queryset(self):
-        user = self.request.user
-        role = user.userprofile.role
-
-        if role == 'professor':
-            professor = Professor.objects.get(user=user)
-            return Attendance.objects.filter(subject__professor=professor)
-        elif role == 'student':
-            student = Student.objects.get(user=user)
-            return Attendance.objects.filter(student=student)
-        return Attendance.objects.all()
-    
-
-
-# 🔸 Regjistrimet e studentëve në lëndë
-class EnrollmentViewSet(viewsets.ModelViewSet):
-    queryset = Enrollment.objects.all()
-    serializer_class = EnrollmentSerializer
-
-    def get_permissions(self):
-        if self.request.method == 'POST':
-            return [RolePermission(['student'])]
-        return [RolePermission(['admin', 'secretary', 'student'])]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.userprofile.role == 'student':
-            student = Student.objects.get(user=user)
-            return Enrollment.objects.filter(student=student)
-        return Enrollment.objects.all()
-
-    def perform_create(self, serializer):
-        student = Student.objects.get(user=self.request.user)
-        serializer.save(student=student)
-
-
-# ===================================
-# 🏢 STRUKTURA ORGANIZATIVE
-# ===================================
-
-# 🔸 Fakultetet
-class FacultyViewSet(viewsets.ModelViewSet):
-    queryset = Faculty.objects.all()
-    serializer_class = FacultySerializer
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['admin'])]
-        return [RolePermission(['admin', 'secretary', 'exam', 'student', 'professor'])]
-
-
-
-
-# 🔸 Departamentet (filtruar në bazë të fakultetit të sekretarit nëse aplikohet)
-class DepartmentViewSet(viewsets.ModelViewSet):
-    queryset = Department.objects.all()
-    serializer_class = DepartmentSerializer
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.userprofile.role == 'secretary':
-            try:
-                secretary = Secretary.objects.get(user=user)
-                return Department.objects.filter(faculty=secretary.faculty)
-            except Secretary.DoesNotExist:
-                return Department.objects.none()
-        return Department.objects.all()
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['secretary', 'admin'])]
-        return [RolePermission(['admin', 'secretary', 'finance', 'exam', 'student', 'professor'])]
-
-
-# 🔸 Ndërtesat (kufizuara për sekretarin në bazë të fakultetit të tij)
-class BuildingViewSet(viewsets.ModelViewSet):
-    queryset = Building.objects.all()
-    serializer_class = BuildingSerializer
-
-    def get_permissions(self):
-        return [RolePermission(['admin', 'secretary'])]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.userprofile.role == 'secretary':
-            return Building.objects.filter(faculty=user.secretary.faculty)
-        return Building.objects.all()
-
-    def perform_create(self, serializer):
-        user = self.request.user
-        if user.userprofile.role == 'secretary':
-            serializer.save(faculty=user.secretary.faculty)
-        else:
-            serializer.save()
-
-
-# 🔸 Dhomat (filtruar në bazë të ndërtesave të sekretarit)
-class RoomViewSet(viewsets.ModelViewSet):
-    queryset = Room.objects.all()
-    serializer_class = RoomSerializer
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['secretary'])]
-        return [RolePermission(['secretary', 'exam'])]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.userprofile.role == 'secretary':
-            return Room.objects.filter(building__faculty=user.secretary.faculty)
-        return Room.objects.all()
-
-
-# ===================================
-# 📚 ADMINISTRATË & MBËSHTETJE
-# ===================================
-
-# 🔸 Bibliotekat (menaxhohen nga admin ose librarian)
-class LibraryViewSet(TenantFilterMixin, viewsets.ModelViewSet):
-    queryset = Library.objects.all()
-    serializer_class = LibrarySerializer
-
-    def get_queryset(self):
-        return self.get_tenant_queryset(Library.objects.all())
-
-    def get_permissions(self):
-        return [RolePermission(['admin', 'librarian', 'secretary'])]
-
-
-# 🔸 Librat e bibliotekës
-User = get_user_model()
-class BookViewSet(viewsets.ModelViewSet):
-    queryset = Book.objects.all()
-    serializer_class = BookSerializer
-
-    def get_permissions(self):
-        return [RolePermission(['admin', 'librarian'])]
-
-    @action(detail=False, methods=['post'], url_path='loan')
-    def loan_book(self, request):
-        book_id = request.data.get('book')
-        student_id = request.data.get('student')
-        try:
-            book = Book.objects.get(id=book_id)
-            student = User.objects.get(id=student_id)
-
-            if book.is_borrowed:
-                return Response({'error': 'Ky libër është tashmë i huazuar.'}, status=400)
-
-            book.is_borrowed = True
-            book.borrowed_by = student
-            book.save()
-
-            return Response({'message': 'Libri u huazua me sukses.'})
-        except Book.DoesNotExist:
-            return Response({'error': 'Libri nuk u gjet.'}, status=404)
-        except User.DoesNotExist:
-            return Response({'error': 'Studenti nuk u gjet.'}, status=404)
-
-    @action(detail=False, methods=['post'], url_path='return')
-    def return_book(self, request):
-        book_id = request.data.get('book')
-        try:
-            book = Book.objects.get(id=book_id)
-            book.is_borrowed = False
-            book.borrowed_by = None
-            book.save()
-            return Response({'message': 'Libri u dorëzua me sukses.'})
-        except Book.DoesNotExist:
-            return Response({'error': 'Libri nuk u gjet.'}, status=404)
-
-
-
-# 🔸 Huazimi i librave (menaxhohet nga librarian)
-class BookLoanViewSet(TenantFilterMixin, viewsets.ModelViewSet):
-    queryset = BookLoan.objects.all()
-    serializer_class = BookLoanSerializer
-
-    def get_queryset(self):
-        return self.get_tenant_queryset(BookLoan.objects.all())
-
-    def get_permissions(self):
-        return [RolePermission(['librarian'])]
-
-    @action(detail=False, methods=['post'], url_path='return')
-    def return_book(self, request):
-        loan_id = request.data.get('loan_id')
-        loan = get_object_or_404(BookLoan, id=loan_id, returned=False)
-        loan.return_book()
-        return Response({"message": "Libri u dorëzua me sukses."})
-
-
-
-
-
-# 🔸 Pagesat e përgjithshme (menaxhohen vetëm nga finance/admin)
-class PaymentViewSet(TenantFilterMixin, viewsets.ModelViewSet):
-    queryset = Payment.objects.all()
-    serializer_class = PaymentSerializer
-
-    def get_queryset(self):
-        return self.get_tenant_queryset(Payment.objects.all())
-
-    def get_permissions(self):
-        return [RolePermission(['finance'])]
-
-
-# 🔸 Menaxhimi i bursave për studentët
-class ScholarshipViewSet(viewsets.ModelViewSet):
-    queryset = Scholarship.objects.all()
-    serializer_class = ScholarshipSerializer
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
-            return [RolePermission(['finance'])]
-        return [RolePermission(['finance', 'student'])]
-
-
-# 🔸 Aplikimi për bursë nga studenti
-class ScholarshipApplicationViewSet(viewsets.ModelViewSet):
-    queryset = ScholarshipApplication.objects.all()
-    serializer_class = ScholarshipApplicationSerializer
-    student = models.ForeignKey(User, on_delete=models.CASCADE)
-
-    def get_permissions(self):
-        if self.request.method == 'POST':
-            return [RolePermission(['student', 'finance'])]  # Vetëm studentët mund të aplikojnë
-        return [RolePermission(['finance', 'student'])]
-
-    def perform_create(self, serializer):
-        user = self.request.user
-        month = self.request.data.get('month')
-        if ScholarshipApplication.objects.filter(student=user, month=month).exists():
-            raise serializers.ValidationError("Keni aplikuar tashmë për këtë muaj.")
-        serializer.save(student=user)
-
-    def get_queryset(self):
-        user = self.request.user
-        role = getattr(user.userprofile, 'role', None)
-
-        if role == 'student':
-            return ScholarshipApplication.objects.filter(student=user)
-        elif role in ['admin', 'finance']:
-            return ScholarshipApplication.objects.all()
-        return ScholarshipApplication.objects.none()
-
-
-
-
-
-    def partial_update(self, request, *args, **kwargs):
-        print("📩 Request PATCH për bursë:", request.data)
-        return super().partial_update(request, *args, **kwargs)
-
-
-# 🔸 Hapja e aplikimeve për bursë – vetëm nga finance
-class ScholarshipOpeningViewSet(viewsets.ModelViewSet):
-    queryset = ScholarshipOpening.objects.all()
-    serializer_class = ScholarshipOpeningSerializer
-
-    def get_permissions(self):
-        if self.request.method in ['POST', 'DELETE']:
-            return [RolePermission(['finance'])]
-        return [RolePermission(['finance', 'student'])]
-
-
-# 🔸 Pagesat e stafit – vetëm finance mund t’i regjistrojë
-class PaymentStaffViewSet(viewsets.ModelViewSet):
-    queryset = PaymentStaff.objects.all()
-    serializer_class = PaymentStaffSerializer
-
-    def get_permissions(self):
-        return [RolePermission(['finance'])]
-
-    def perform_create(self, serializer):
-        user = serializer.validated_data.get('user', None)
-        month = serializer.validated_data['month']
-
-        if user:
-            profile = getattr(user, 'userprofile', None)
-            if not profile:
-                raise serializers.ValidationError("Ky përdorues nuk ka profil të caktuar.")
-            role = profile.role
-            full_name = f"{user.first_name} {user.last_name}"
-
-            if PaymentStaff.objects.filter(user=user, month=month).exists():
-                raise serializers.ValidationError("Ky staf është paguar tashmë për këtë muaj.")
-
-            serializer.save(full_name=full_name, role=role)
-
-        else:
-            full_name = serializer.validated_data.get('full_name')
-            role = serializer.validated_data.get('role')
-
-            if PaymentStaff.objects.filter(full_name=full_name, role=role, month=month).exists():
-                raise serializers.ValidationError("Ky staf është paguar tashmë për këtë muaj.")
-
-            serializer.save()
-
-
-# ===================================
-# 📝 PROVIME TË DORËZUARA NGA STUDENTËT
-# ===================================
-
-# 🔸 Menaxhimi i dorëzimeve të provimeve (submission) nga studentët
-class ExamSubmissionViewSet(viewsets.ModelViewSet):
-    queryset = ExamSubmission.objects.all()
-    serializer_class = ExamSubmissionSerializer
-
-    def get_permissions(self):
-        if self.request.method == 'POST':
-            return [RolePermission(['student'])]  # Vetëm studentët mund të paraqesin
-        return [RolePermission(['professor', 'admin', 'student'])]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.userprofile.role == 'professor':
-            professor = Professor.objects.get(user=user)
-            return ExamSubmission.objects.filter(subject__professor=professor)
-        elif user.userprofile.role == 'student':
-            student = Student.objects.get(user=user)
-            return ExamSubmission.objects.filter(student=student)
-        return ExamSubmission.objects.all()
-
-
-    def perform_create(self, serializer):
-        student = Student.objects.get(user=self.request.user)
-        subject = serializer.validated_data['subject']
-
-        if ExamSubmission.objects.filter(student=student, subject=subject).exists():
-            raise serializers.ValidationError("E ke paraqitur tashmë këtë lëndë.")
-        
-        serializer.save(student=student)
