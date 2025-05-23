@@ -579,9 +579,6 @@ class ScholarshipViewSet(viewsets.ModelViewSet):
     queryset = Scholarship.objects.all()
     serializer_class = ScholarshipSerializer
     
-    def get_queryset(self):
-        user = self.request.user
-        return ScholarshipApplication.objects.filter(student=user)
          
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
@@ -599,6 +596,10 @@ class ScholarshipApplicationViewSet(viewsets.ModelViewSet):
         if self.request.method == 'POST':
             return [RolePermission(['student', 'finance'])]  # Vetëm studentët mund të aplikojnë
         return [RolePermission(['finance', 'student'])]
+
+    def get_queryset(self):
+        user = self.request.user
+        return ScholarshipApplication.objects.filter(student=user)
 
     def perform_create(self, serializer):
         user = self.request.user
