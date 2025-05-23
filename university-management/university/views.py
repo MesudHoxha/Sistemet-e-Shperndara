@@ -578,7 +578,11 @@ class PaymentViewSet(TenantFilterMixin, viewsets.ModelViewSet):
 class ScholarshipViewSet(viewsets.ModelViewSet):
     queryset = Scholarship.objects.all()
     serializer_class = ScholarshipSerializer
-
+    
+    def get_queryset(self):
+        user = self.request.user
+        return ScholarshipApplication.objects.filter(student=user)
+         
     def get_permissions(self):
         if self.request.method in ['POST', 'PUT', 'PATCH', 'DELETE']:
             return [RolePermission(['finance'])]
