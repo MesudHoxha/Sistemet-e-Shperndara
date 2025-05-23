@@ -66,6 +66,8 @@ class StudentSerializer(serializers.ModelSerializer):
                 last_name=last_name
             )
 
+            UserProfile.objects.create(user=user, role='student') 
+
             faculty = validated_data.pop('faculty', None)
             department = validated_data.pop('department', None)
 
@@ -138,6 +140,8 @@ class ProfessorSerializer(serializers.ModelSerializer):
                 last_name=last_name
             )
 
+            UserProfile.objects.create(user=user, role='professor')
+
             faculty = validated_data.pop('faculty')
 
             professor = Professor.objects.create(
@@ -190,9 +194,7 @@ class SecretarySerializer(serializers.ModelSerializer):
                 last_name=last_name,
             )
 
-            user_profile = user.userprofile
-            user_profile.role = 'secretary'
-            user_profile.save()
+            UserProfile.objects.create(user=user, role='secretary')
 
             secretary = Secretary.objects.create(
                 user=user,
@@ -242,9 +244,7 @@ class FinanceSerializer(serializers.ModelSerializer):
                 last_name=last_name,
             )
 
-            user_profile = user.userprofile
-            user_profile.role = 'finance'
-            user_profile.save()
+            UserProfile.objects.create(user=user, role='finance')
 
             finance = Finance.objects.create(
                 user=user,
@@ -295,9 +295,7 @@ class LibrarianSerializer(serializers.ModelSerializer):
                 last_name=last_name
             )
 
-            user_profile = user.userprofile
-            user_profile.role = 'librarian'
-            user_profile.save()
+            UserProfile.objects.create(user=user, role='librarian')
 
             librarian = Librarian.objects.create(
                 user=user,
@@ -348,9 +346,7 @@ class ExamOfficerSerializer(serializers.ModelSerializer):
                 last_name=last_name
             )
 
-            user_profile = user.userprofile
-            user_profile.role = 'exam'
-            user_profile.save()
+            UserProfile.objects.create(user=user, role='exam')
 
             exam = ExamOfficer.objects.create(
                 user=user,
