@@ -35,7 +35,16 @@ const ScholarshipApplicationForm = () => {
     try {
       const res = await axios.get("http://127.0.0.1:8000/api/v1/scholarship-applications/", { headers });
       setApplications(res.data);
-      if (res.data.find(app => app.month === currentMonth)) setApplied(true);
+      const monthNow = new Date().getMonth(); // 0-11
+const yearNow = new Date().getFullYear();
+
+if (res.data.some(app => {
+  const appDate = new Date(app.month);
+  return appDate.getMonth() === monthNow && appDate.getFullYear() === yearNow;
+})) {
+  setApplied(true);
+}
+
     } catch (err) {
       console.error("❌ Gabim në marrjen e aplikimeve:", err);
     }
@@ -48,9 +57,14 @@ const ScholarshipApplicationForm = () => {
       setMessage("✅ Aplikimi për bursë u regjistrua me sukses.");
       fetchApplications();
     } catch (err) {
-      console.error("❌ Gabim në aplikim:", err);
-      setMessage("❌ Nuk mund të aplikoni dy herë për të njëjtin muaj.");
-    }
+  console.error("❌ Gabim në aplikim:", err);
+  const msg = err.response?.data?.detail ||
+            Object.values(err.response?.data || {}).join(', ') ||
+            "❌ Gabim gjatë aplikimit për bursë.";
+setMessage(msg);
+
+}
+
   };
 
   // Stilimi i njëtrajtshëm
