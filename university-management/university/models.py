@@ -75,9 +75,14 @@ class Student(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
-    def delete(self, *args, **kwargs):
+     def delete(self, *args, **kwargs):
         if self.user:
-            self.user.delete()  # fshij edhe përdoruesin
+            # fshij UserProfile nëse ekziston
+            try:
+                self.user.userprofile.delete()
+            except:
+                pass
+            self.user.delete()
         super().delete(*args, **kwargs)
 
 
@@ -93,9 +98,14 @@ class Professor(models.Model):
     def __str__(self):
         return f"Prof. {self.first_name} {self.last_name}"
 
-    def delete(self, *args, **kwargs):
+     def delete(self, *args, **kwargs):
         if self.user:
-            self.user.delete()  # fshij edhe përdoruesin
+            # fshij UserProfile nëse ekziston
+            try:
+                self.user.userprofile.delete()
+            except:
+                pass
+            self.user.delete()
         super().delete(*args, **kwargs)
 
 
@@ -111,9 +121,14 @@ class Secretary(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
-    def delete(self, *args, **kwargs):
+     def delete(self, *args, **kwargs):
         if self.user:
-            self.user.delete()  # fshij edhe përdoruesin
+            # fshij UserProfile nëse ekziston
+            try:
+                self.user.userprofile.delete()
+            except:
+                pass
+            self.user.delete()
         super().delete(*args, **kwargs)
 
 
@@ -130,7 +145,12 @@ class Finance(models.Model):
 
     def delete(self, *args, **kwargs):
         if self.user:
-            self.user.delete()  # fshij edhe përdoruesin
+            # fshij UserProfile nëse ekziston
+            try:
+                self.user.userprofile.delete()
+            except:
+                pass
+            self.user.delete()
         super().delete(*args, **kwargs)
 
 
@@ -145,11 +165,15 @@ class ExamOfficer(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
-    def delete(self, *args, **kwargs):
+     def delete(self, *args, **kwargs):
         if self.user:
-            self.user.delete()  # fshij edhe përdoruesin
+            # fshij UserProfile nëse ekziston
+            try:
+                self.user.userprofile.delete()
+            except:
+                pass
+            self.user.delete()
         super().delete(*args, **kwargs)
-
 
 
 
