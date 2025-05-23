@@ -7,12 +7,15 @@ class TenantFilterMixin:
         role = user.userprofile.role
 
         # ✅ Admin, Finance dhe ExamOfficer shohin gjithçka (universale)
-        if role in ['admin', 'finance', 'exam_officer', 'student', 'librarian']:
+        if role in ['admin', 'finance', 'exam_officer', 'library']:
             return base_queryset
 
         try:
             if role == 'secretary':
                 faculty = Secretary.objects.get(user=user).faculty
+                return base_queryset.filter(faculty=faculty)
+            elif role == 'student':
+                faculty = Student.objects.get(user=user).faculty
                 return base_queryset.filter(faculty=faculty)
             elif role == 'professor':
                 faculty = Professor.objects.get(user=user).faculty
