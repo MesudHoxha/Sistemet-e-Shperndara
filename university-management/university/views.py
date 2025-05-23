@@ -599,7 +599,13 @@ class ScholarshipApplicationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return ScholarshipApplication.objects.filter(student=user)
+        role = getattr(user.userprofile, 'role', None)
+
+        if role == 'student':
+            return ScholarshipApplication.objects.filter(student=user)
+        elif role in ['admin', 'finance']:
+            return ScholarshipApplication.objects.all()
+        return ScholarshipApplication.objects.none()
 
     def perform_create(self, serializer):
         user = self.request.user
