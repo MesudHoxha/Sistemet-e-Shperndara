@@ -75,6 +75,11 @@ class Student(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
+    def delete(self, *args, **kwargs):
+        if self.user:
+            self.user.delete()  # fshij edhe përdoruesin
+        super().delete(*args, **kwargs)
+
 
 # Professor model linked to a User and associated with Faculty and Department
 class Professor(models.Model):
@@ -87,6 +92,11 @@ class Professor(models.Model):
 
     def __str__(self):
         return f"Prof. {self.first_name} {self.last_name}"
+
+    def delete(self, *args, **kwargs):
+        if self.user:
+            self.user.delete()  # fshij edhe përdoruesin
+        super().delete(*args, **kwargs)
 
 
 # Secretary model linked to a User and optionally associated with a Faculty
@@ -101,6 +111,11 @@ class Secretary(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
+    def delete(self, *args, **kwargs):
+        if self.user:
+            self.user.delete()  # fshij edhe përdoruesin
+        super().delete(*args, **kwargs)
+
 
 # Finance staff model linked to a User
 class Finance(models.Model):
@@ -113,6 +128,11 @@ class Finance(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
+    def delete(self, *args, **kwargs):
+        if self.user:
+            self.user.delete()  # fshij edhe përdoruesin
+        super().delete(*args, **kwargs)
+
 
 # Exam Officer model linked to a User and optionally associated with a Faculty
 class ExamOfficer(models.Model):
@@ -124,6 +144,11 @@ class ExamOfficer(models.Model):
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
+
+    def delete(self, *args, **kwargs):
+        if self.user:
+            self.user.delete()  # fshij edhe përdoruesin
+        super().delete(*args, **kwargs)
 
 
 
@@ -361,11 +386,6 @@ class PaymentStaff(models.Model):
 # SIGNALS FOR USER PROFILE
 # ------------------------
 
-# Signal to create a UserProfile when a User is created
-@receiver(post_save, sender=User)
-def create_user_profile(sender, instance, created, **kwargs):
-    if created and not hasattr(instance, 'userprofile'):
-        UserProfile.objects.create(user=instance, role='student')  # default role
 
 
 # Signal to save the UserProfile when a User is saved
